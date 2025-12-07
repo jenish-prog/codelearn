@@ -3,30 +3,45 @@ import { DndProvider, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import SqlBlock from './SqlBlock';
 
-const QUESTIONS = [
-    {
-        id: 1,
-        text: "Fetch all employees with salary greater than 50000.",
-        hint: "Use SELECT * FROM ... WHERE ..."
-    },
-    {
-        id: 2,
-        text: "Find the names of all students.",
-        hint: "Use SELECT name FROM students"
-    }
-];
+const QUESTIONS = {
+    basic: [
+        { id: 1, text: "Fetch all employees with salary greater than 50000.", hint: "Use SELECT * FROM ... WHERE ...", answer: "SELECT * FROM employees WHERE salary > 50000" },
+        { id: 2, text: "Find the names of all students.", hint: "Use SELECT name FROM students", answer: "SELECT name FROM students" },
+        { id: 3, text: "Show all employees in the 'Engineering' department.", hint: "WHERE department = 'Engineering'", answer: "SELECT * FROM employees WHERE department = 'Engineering'" }
+    ],
+    intermediate: [
+        { id: 4, text: "Find students with grade higher than 80.", hint: "Use WHERE grade > 80", answer: "SELECT * FROM students WHERE grade > 80" },
+        { id: 5, text: "List employees sorted by salary descending.", hint: "Use ORDER BY salary DESC", answer: "SELECT * FROM employees ORDER BY salary DESC" }
+    ],
+    advanced: [
+        { id: 6, text: "Count the number of employees in each department.", hint: "Use GROUP BY department", answer: "SELECT department, COUNT(*) FROM employees GROUP BY department" },
+        { id: 7, text: "Find the average salary of employees.", hint: "Use AVG(salary)", answer: "SELECT AVG(salary) FROM employees" }
+    ]
+};
 
 const SYNTAX_BLOCKS = [
     { label: 'SELECT', type: 'keyword' },
     { label: '*', type: 'wildcard' },
     { label: 'FROM', type: 'keyword' },
     { label: 'WHERE', type: 'keyword' },
+    { label: 'ORDER BY', type: 'keyword' },
+    { label: 'GROUP BY', type: 'keyword' },
+    { label: 'DESC', type: 'keyword' },
+    { label: 'ASC', type: 'keyword' },
+    { label: 'COUNT(*)', type: 'function' },
+    { label: 'AVG', type: 'function' },
     { label: 'employees', type: 'table' },
     { label: 'students', type: 'table' },
     { label: 'salary', type: 'column' },
     { label: 'name', type: 'column' },
+    { label: 'department', type: 'column' },
+    { label: 'grade', type: 'column' },
     { label: '>', type: 'operator' },
+    { label: '<', type: 'operator' },
+    { label: '=', type: 'operator' },
     { label: '50000', type: 'value' },
+    { label: '80', type: 'value' },
+    { label: "'Engineering'", type: 'value' },
     { label: ';', type: 'terminator' }
 ];
 
@@ -34,7 +49,8 @@ const SqlBuilderContent = ({ theme }) => {
     const [queryBlocks, setQueryBlocks] = useState([]);
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
-    const [currentQuestion, setCurrentQuestion] = useState(QUESTIONS[0]);
+    const [selectedCategory, setSelectedCategory] = useState('basic');
+    const [currentQuestion, setCurrentQuestion] = useState(QUESTIONS.basic[0]);
 
     const isDark = theme === 'dark';
 
@@ -47,8 +63,6 @@ const SqlBuilderContent = ({ theme }) => {
     }));
 
     const addBlock = (item) => {
-        // If it has an ID, it's already in the list (reordering logic could go here, but for now just append new ones)
-        // Actually, let's just append new blocks from the sidebar
         if (!item.id) {
             setQueryBlocks((prev) => [
                 ...prev,
@@ -90,91 +104,156 @@ const SqlBuilderContent = ({ theme }) => {
         setError(null);
     };
 
-    return (
-        <div className={`flex flex-col h-full gap-4 ${isDark ? 'text-white' : 'text-gray-800'}`}>
+    const handleCategoryChange = (category) => {
+        setSelectedCategory(category);
+        setCurrentQuestion(QUESTIONS[category][0]);
+        clearQuery();
+    };
 
-            {/* Top Panel: Question */}
-            <div className={`p-6 rounded-xl shadow-lg ${isDark ? 'bg-slate-800' : 'bg-white'} border-l-4 border-indigo-500`}>
-                <h2 className="text-lg font-bold mb-2">Challenge:</h2>
-                <p className="text-xl">{currentQuestion.text}</p>
-                <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Hint: {currentQuestion.hint}</p>
+    const handleQuestionSelect = (question) => {
+        setCurrentQuestion(question);
+        clearQuery();
+    };
+
+    return (
+        <div className={`flex h-full gap-4 ${isDark ? 'text-white' : 'text-gray-800'}`}>
+
+            {/* Sidebar: Categories & Questions */}
+            <div className={`w-64 flex flex-col gap-4 p-4 rounded-xl shadow-lg ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
+                <h3 className="font-bold text-lg">Practice Levels</h3>
+
+                {/* Category Tabs */}
+                <div className="flex gap-1 p-1 bg-gray-200/20 rounded-lg">
+                    {['basic', 'intermediate', 'advanced'].map(cat => (
+                        <button
+                            key={cat}
+                            onClick={() => handleCategoryChange(cat)}
+                            className={`flex-1 py-1 px-2 text-xs font-medium rounded-md capitalize transition-colors ${selectedCategory === cat
+                                    ? (isDark ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-600 shadow-sm')
+                                    : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            {cat}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Question List */}
+                <div className="flex-1 overflow-y-auto space-y-2">
+                    {QUESTIONS[selectedCategory].map((q, i) => (
+                        <button
+                            key={q.id}
+                            onClick={() => handleQuestionSelect(q)}
+                            className={`w-full text-left p-3 rounded-lg text-sm transition-all ${currentQuestion.id === q.id
+                                    ? (isDark ? 'bg-indigo-900/50 border border-indigo-500/50' : 'bg-indigo-50 border border-indigo-200')
+                                    : (isDark ? 'hover:bg-slate-700' : 'hover:bg-gray-50')
+                                }`}
+                        >
+                            <div className="font-medium mb-1">Question {i + 1}</div>
+                            <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'} line-clamp-2`}>
+                                {q.text}
+                            </div>
+                        </button>
+                    ))}
+                </div>
             </div>
 
-            <div className="flex flex-1 gap-4 min-h-0">
-                {/* Left Panel: Syntax Blocks */}
-                <div className={`w-64 p-4 rounded-xl shadow-lg overflow-y-auto ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-                    <h3 className="font-bold mb-4 text-sm uppercase tracking-wider text-gray-500">Toolbox</h3>
-                    <div className="flex flex-wrap gap-2">
-                        {SYNTAX_BLOCKS.map((block, i) => (
-                            <SqlBlock key={i} type={block.type} label={block.label} isTemplate={true} />
-                        ))}
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col gap-4 min-w-0">
+
+                {/* Top Panel: Current Challenge */}
+                <div className={`p-6 rounded-xl shadow-lg ${isDark ? 'bg-slate-800' : 'bg-white'} border-l-4 border-indigo-500`}>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h2 className="text-lg font-bold mb-2">Challenge:</h2>
+                            <p className="text-xl">{currentQuestion.text}</p>
+                            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Hint: {currentQuestion.hint}</p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${selectedCategory === 'basic' ? 'bg-green-100 text-green-800' :
+                                selectedCategory === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-red-100 text-red-800'
+                            }`}>
+                            {selectedCategory}
+                        </span>
                     </div>
                 </div>
 
-                {/* Right Panel: Builder Area */}
-                <div className="flex-1 flex flex-col gap-4">
-                    <div
-                        ref={drop}
-                        className={`flex-1 p-6 rounded-xl shadow-lg transition-colors ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-gray-200'
-                            } border-2 border-dashed ${isOver ? 'border-indigo-500 bg-indigo-50/10' : ''}`}
-                    >
-                        <div className="flex flex-wrap gap-2 items-center">
-                            {queryBlocks.length === 0 && (
-                                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                    Drag blocks here to build your query
-                                </div>
-                            )}
-                            {queryBlocks.map((block) => (
-                                <div key={block.id} onClick={() => removeBlock(block.id)} className="cursor-pointer hover:opacity-80" title="Click to remove">
-                                    <SqlBlock type={block.type} label={block.label} id={block.id} />
-                                </div>
+                <div className="flex flex-1 gap-4 min-h-0">
+                    {/* Syntax Toolbox */}
+                    <div className={`w-48 p-4 rounded-xl shadow-lg overflow-y-auto ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
+                        <h3 className="font-bold mb-4 text-sm uppercase tracking-wider text-gray-500">Toolbox</h3>
+                        <div className="flex flex-wrap gap-2">
+                            {SYNTAX_BLOCKS.map((block, i) => (
+                                <SqlBlock key={i} type={block.type} label={block.label} isTemplate={true} />
                             ))}
                         </div>
                     </div>
 
-                    {/* Bottom Panel: Output */}
-                    <div className={`h-64 p-4 rounded-xl shadow-lg flex flex-col ${isDark ? 'bg-black font-mono text-green-400' : 'bg-gray-900 font-mono text-green-400'}`}>
-                        <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-2">
-                            <span>Console Output</span>
-                            <div className="flex gap-2">
-                                <button onClick={clearQuery} className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-white">Clear</button>
-                                <button onClick={runQuery} className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500 text-white font-bold">Run Query</button>
+                    {/* Builder Area */}
+                    <div className="flex-1 flex flex-col gap-4">
+                        <div
+                            ref={drop}
+                            className={`flex-1 p-6 rounded-xl shadow-lg transition-colors ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-gray-200'
+                                } border-2 border-dashed ${isOver ? 'border-indigo-500 bg-indigo-50/10' : ''}`}
+                        >
+                            <div className="flex flex-wrap gap-2 items-center">
+                                {queryBlocks.length === 0 && (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                        Drag blocks here to build your query
+                                    </div>
+                                )}
+                                {queryBlocks.map((block) => (
+                                    <div key={block.id} onClick={() => removeBlock(block.id)} className="cursor-pointer hover:opacity-80" title="Click to remove">
+                                        <SqlBlock type={block.type} label={block.label} id={block.id} />
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-auto">
-                            {error && <div className="text-red-500">Error: {error}</div>}
+                        {/* Output Panel */}
+                        <div className={`h-64 p-4 rounded-xl shadow-lg flex flex-col ${isDark ? 'bg-black font-mono text-green-400' : 'bg-gray-900 font-mono text-green-400'}`}>
+                            <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-2">
+                                <span>Console Output</span>
+                                <div className="flex gap-2">
+                                    <button onClick={clearQuery} className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-white">Clear</button>
+                                    <button onClick={runQuery} className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500 text-white font-bold">Run Query</button>
+                                </div>
+                            </div>
 
-                            {result && (
-                                <div className="w-full">
-                                    {result.length > 0 ? (
-                                        <table className="w-full text-left text-sm">
-                                            <thead>
-                                                <tr className="border-b border-gray-700">
-                                                    {Object.keys(result[0]).map(key => (
-                                                        <th key={key} className="p-2">{key}</th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {result.map((row, i) => (
-                                                    <tr key={i} className="border-b border-gray-800 hover:bg-gray-800">
-                                                        {Object.values(row).map((val, j) => (
-                                                            <td key={j} className="p-2">{val}</td>
+                            <div className="flex-1 overflow-auto">
+                                {error && <div className="text-red-500">Error: {error}</div>}
+
+                                {result && (
+                                    <div className="w-full">
+                                        {result.length > 0 ? (
+                                            <table className="w-full text-left text-sm">
+                                                <thead>
+                                                    <tr className="border-b border-gray-700">
+                                                        {Object.keys(result[0]).map(key => (
+                                                            <th key={key} className="p-2">{key}</th>
                                                         ))}
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    ) : (
-                                        <div className="text-gray-500">Query executed successfully. No results returned.</div>
-                                    )}
-                                </div>
-                            )}
+                                                </thead>
+                                                <tbody>
+                                                    {result.map((row, i) => (
+                                                        <tr key={i} className="border-b border-gray-800 hover:bg-gray-800">
+                                                            {Object.values(row).map((val, j) => (
+                                                                <td key={j} className="p-2">{val}</td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        ) : (
+                                            <div className="text-gray-500">Query executed successfully. No results returned.</div>
+                                        )}
+                                    </div>
+                                )}
 
-                            {!result && !error && (
-                                <div className="text-gray-600">Ready to execute...</div>
-                            )}
+                                {!result && !error && (
+                                    <div className="text-gray-600">Ready to execute...</div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

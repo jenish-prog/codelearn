@@ -387,22 +387,26 @@ public class Main {
               </div>
 
               <div className="flex gap-4 items-center">
-                <button
-                  onClick={generateFlowchart}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all ${isDark ? 'bg-green-600 text-white hover:bg-green-500' : 'bg-green-500 text-white hover:bg-green-600'}`}
-                >
-                  Generate Flowchart
-                </button>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className={`bg-transparent border-none text-sm font-medium focus:ring-0 cursor-pointer ${isDark ? 'text-gray-300' : 'text-gray-600'}`}
-                  aria-label="Select language"
-                >
-                  <option value="python">Python</option>
-                  <option value="javascript">JavaScript</option>
-                  <option value="java">Java</option>
-                </select>
+                {activeView === 'editor' && (
+                  <>
+                    <button
+                      onClick={generateFlowchart}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all ${isDark ? 'bg-green-600 text-white hover:bg-green-500' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                    >
+                      Generate Flowchart
+                    </button>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className={`bg-transparent border-none text-sm font-medium focus:ring-0 cursor-pointer ${isDark ? 'text-gray-300' : 'text-gray-600'}`}
+                      aria-label="Select language"
+                    >
+                      <option value="python">Python</option>
+                      <option value="javascript">JavaScript</option>
+                      <option value="java">Java</option>
+                    </select>
+                  </>
+                )}
 
                 <button
                   onClick={toggleTheme}

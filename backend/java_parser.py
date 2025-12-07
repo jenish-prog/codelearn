@@ -1,5 +1,5 @@
 import javalang
-from javalang.tree import MethodDeclaration, BlockStatement, Statement, IfStatement, WhileStatement, ReturnStatement, MethodInvocation, Assignment, VariableDeclarator, LocalVariableDeclaration
+from javalang.tree import MethodDeclaration, BlockStatement, Statement, IfStatement, WhileStatement, ReturnStatement, MethodInvocation, Assignment, VariableDeclarator, LocalVariableDeclaration, ForStatement, MemberReference, Literal, BinaryOperation
 
 class JavaMermaidGenerator:
     def __init__(self):
@@ -18,7 +18,7 @@ class JavaMermaidGenerator:
         if not text:
             return ""
         # Escape special characters
-        safe = text.replace('"', "'").replace('\n', ' ').replace('{', '&#123;').replace('}', '&#125;').replace('[', '&#91;').replace(']', '&#93;')
+        safe = str(text).replace('"', "'").replace('\n', ' ').replace('{', '&#123;').replace('}', '&#125;').replace('[', '&#91;').replace(']', '&#93;')
         
         # Relax truncation for "exact values"
         if len(safe) > 100:
@@ -30,6 +30,61 @@ class JavaMermaidGenerator:
             self.graph.append(f"    {from_node} -->|{label}| {to_node}")
         else:
             self.graph.append(f"    {from_node} --> {to_node}")
+
+    def get_expression_string(self, expr):
+        """Recursively reconstructs the string representation of an expression."""
+        if expr is None:
+            return ""
+        
+        # Handle operators
+        prefix = ""
+        postfix = ""
+        if hasattr(expr, 'prefix_operators') and expr.prefix_operators:
+            prefix = "".join(expr.prefix_operators)
+        if hasattr(expr, 'postfix_operators') and expr.postfix_operators:
+            postfix = "".join(expr.postfix_operators)
+
+        base = ""
+        
+        if isinstance(expr, Literal):
+            base = str(expr.value)
+        
+        elif isinstance(expr, MemberReference):
+            base = expr.member
+            if expr.qualifier:
+                base = f"{expr.qualifier}.{base}"
+        
+        elif isinstance(expr, BinaryOperation):
+            left = self.get_expression_string(expr.operandl)
+            right = self.get_expression_string(expr.operandr)
+            base = f"{left} {expr.operator} {right}"
+                
+        elif isinstance(expr, MethodInvocation):
+            args = ", ".join([self.get_expression_string(arg) for arg in expr.arguments])
+            qualifier = f"{expr.qualifier}." if expr.qualifier else ""
+            base = f"{qualifier}{expr.member}({args})"
+            
+        elif isinstance(expr, javalang.tree.This):
+            base = "this"
+            
+        elif isinstance(expr, javalang.tree.ClassCreator):
+             base = f"new {expr.type.name}(...)"
+
+        elif isinstance(expr, javalang.tree.ArrayInitializer):
+             vals = ", ".join([self.get_expression_string(val) for val in expr.initializers])
+             base = f"{{{vals}}}"
+        
+        elif isinstance(expr, javalang.tree.ArraySelector):
+            base = f"{self.get_expression_string(expr.member)}[{self.get_expression_string(expr.index)}]"
+
+        else:
+            # Fallback for other types
+            if hasattr(expr, 'member'): base = expr.member
+            elif hasattr(expr, 'value'): base = str(expr.value)
+            elif hasattr(expr, 'name'): base = expr.name
+            else: base = "..."
+        
+        return f"{prefix}{base}{postfix}"
 
     def generate(self, code):
         try:
@@ -86,14 +141,7 @@ class JavaMermaidGenerator:
                 var_name = declarator.name
                 init_val = "..." 
                 if declarator.initializer:
-                    if hasattr(declarator.initializer, 'value'):
-                         init_val = str(declarator.initializer.value)
-                    elif hasattr(declarator.initializer, 'member'):
-                         init_val = str(declarator.initializer.member)
-                    elif hasattr(declarator.initializer, 'children'):
-                         # Try to reconstruct from children tokens if available
-                         init_val = "..." 
-                         # This is hard in javalang without source, but we can try basic types
+                    init_val = self.get_expression_string(declarator.initializer)
                 
                 var_node = self.new_node_id(line)
                 self.graph.append(f'    {var_node}["{self.safe_label(f"{var_name} = {init_val}")}"]:::process')
@@ -103,32 +151,25 @@ class JavaMermaidGenerator:
         elif isinstance(node, Statement) and hasattr(node, 'expression'):
             line = node.position.line if node.position else None
             expr = node.expression
+            
             if isinstance(expr, MethodInvocation):
                 call_name = expr.member
                 # Check for System.out.println
                 is_io = False
-                qualifier = expr.qualifier
-                if qualifier == "System.out" and (call_name == "println" or call_name == "print"):
+                qualifier = str(expr.qualifier) if expr.qualifier else ""
+                
+                if (qualifier == "System.out" or qualifier == "out") and (call_name == "println" or call_name == "print"):
                     is_io = True
                 
                 call_node = self.new_node_id(line)
                 
                 label = f"Call {call_name}"
                 if is_io:
-                    # Try to get arguments
-                    args_str = "..."
-                    if expr.arguments:
-                        # Simple argument extraction
-                        args_list = []
-                        for arg in expr.arguments:
-                            if hasattr(arg, 'value'): args_list.append(str(arg.value))
-                            elif hasattr(arg, 'member'): args_list.append(str(arg.member))
-                            elif hasattr(arg, 'string'): args_list.append(f'"{arg.string}"') # String literal
-                        if args_list:
-                            args_str = ", ".join(args_list)
-                    
-                    label = f"System.out.println({args_str})"
-                
+                    args_str = ", ".join([self.get_expression_string(arg) for arg in expr.arguments])
+                    label = f"print({args_str})"
+                else:
+                    label = f"{call_name}(...)"
+
                 if is_io:
                     self.graph.append(f'    {call_node}[/"{self.safe_label(label)}"/]:::io')
                 else:
@@ -139,29 +180,9 @@ class JavaMermaidGenerator:
                 
             elif isinstance(expr, Assignment):
                 line = node.position.line if node.position else None
-                # Handle assignment target extraction more gracefully
-                target = "variable"
-                if hasattr(expr.expressionl, 'member'):
-                    target = expr.expressionl.member
-                elif hasattr(expr.expressionl, 'name'):
-                    target = expr.expressionl.name
-                elif hasattr(expr.expressionl, 'selectors') and expr.expressionl.selectors:
-                     target = "..." 
+                target = self.get_expression_string(expr.expressionl)
+                val = self.get_expression_string(expr.value)
                 
-                if not target or target == "variable":
-                     target = "..."
-                
-                # Try to get value
-                val = "..."
-                if hasattr(expr.value, 'value'): val = str(expr.value.value)
-                elif hasattr(expr.value, 'member'): val = str(expr.value.member)
-                elif hasattr(expr.value, 'operandl'):
-                     # Binary operation approximation
-                     l = expr.value.operandl.member if hasattr(expr.value.operandl, 'member') else (expr.value.operandl.value if hasattr(expr.value.operandl, 'value') else "?")
-                     r = expr.value.operandr.member if hasattr(expr.value.operandr, 'member') else (expr.value.operandr.value if hasattr(expr.value.operandr, 'value') else "?")
-                     op = expr.value.operator if hasattr(expr.value, 'operator') else "?"
-                     val = f"{l} {op} {r}"
-
                 assign_node = self.new_node_id(line)
                 self.graph.append(f'    {assign_node}["{self.safe_label(f"{target} = {val}")}"]:::process')
                 self.add_edge(self.last_node, assign_node)
@@ -169,14 +190,7 @@ class JavaMermaidGenerator:
 
         elif isinstance(node, IfStatement):
             line = node.position.line if node.position else None
-            condition = "Condition"
-            if node.condition:
-                 # Try to reconstruct condition string roughly
-                 if hasattr(node.condition, 'operandl') and hasattr(node.condition, 'operandr'):
-                      l = node.condition.operandl.member if hasattr(node.condition.operandl, 'member') else "..."
-                      r = node.condition.operandr.value if hasattr(node.condition.operandr, 'value') else "..."
-                      op = node.condition.operator if hasattr(node.condition, 'operator') else "?"
-                      condition = f"{l} {op} {r}"
+            condition = self.get_expression_string(node.condition)
             
             decision_node = self.new_node_id(line)
             self.graph.append(f'    {decision_node}{{"{self.safe_label(condition)}?"}}:::decision')
@@ -221,16 +235,28 @@ class JavaMermaidGenerator:
             self.add_edge(false_end, merge_node)
             self.last_node = merge_node
 
-        elif isinstance(node, javalang.tree.ForStatement):
+        elif isinstance(node, ForStatement):
             line = node.position.line if node.position else None
+            
+            # Extract init, condition, update
+            init_str = ""
+            if node.control.init:
+                if isinstance(node.control.init, LocalVariableDeclaration):
+                     init_str = self.get_expression_string(node.control.init.declarators[0]) # Simplified
+                elif isinstance(node.control.init, list):
+                     init_str = ", ".join([self.get_expression_string(i) for i in node.control.init])
+            
+            condition = self.get_expression_string(node.control.condition) if node.control.condition else "True"
+            update = ", ".join([self.get_expression_string(u) for u in node.control.update]) if node.control.update else ""
+
             loop_start = self.new_node_id(line)
-            self.graph.append(f'    {loop_start}{{"{self.safe_label("For Loop")}?"}}:::decision')
+            self.graph.append(f'    {loop_start}{{"{self.safe_label(condition)}?"}}:::decision')
             self.add_edge(self.last_node, loop_start)
             
             # Body
             self.last_node = loop_start
             do_node = self.new_node_id()
-            self.graph.append(f'    {do_node}["Do"]')
+            self.graph.append(f'    {do_node}["Loop Body"]')
             self.add_edge(loop_start, do_node, "True")
             self.last_node = do_node
             
@@ -240,6 +266,13 @@ class JavaMermaidGenerator:
                 else:
                     self.visit(node.body)
             
+            # Update step (visualize it?)
+            if update:
+                update_node = self.new_node_id()
+                self.graph.append(f'    {update_node}["{self.safe_label(update)}"]:::process')
+                self.add_edge(self.last_node, update_node)
+                self.last_node = update_node
+
             self.add_edge(self.last_node, loop_start)
             
             # Exit
@@ -250,15 +283,16 @@ class JavaMermaidGenerator:
 
         elif isinstance(node, WhileStatement):
             line = node.position.line if node.position else None
-            condition = str(node.condition)
+            condition = self.get_expression_string(node.condition)
+            
             loop_start = self.new_node_id(line)
-            self.graph.append(f'    {loop_start}{{"{self.safe_label("While Loop")}?"}}:::decision')
+            self.graph.append(f'    {loop_start}{{"{self.safe_label(condition)}?"}}:::decision')
             self.add_edge(self.last_node, loop_start)
             
             # Body
             self.last_node = loop_start
             do_node = self.new_node_id()
-            self.graph.append(f'    {do_node}["Do"]')
+            self.graph.append(f'    {do_node}["Loop Body"]')
             self.add_edge(loop_start, do_node, "True")
             self.last_node = do_node
             
@@ -278,7 +312,8 @@ class JavaMermaidGenerator:
 
         elif isinstance(node, ReturnStatement):
             line = node.position.line if node.position else None
+            val = self.get_expression_string(node.expression) if node.expression else ""
             ret_node = self.new_node_id(line)
-            self.graph.append(f'    {ret_node}["Return"]:::process')
+            self.graph.append(f'    {ret_node}["Return {self.safe_label(val)}"]:::process')
             self.add_edge(self.last_node, ret_node)
             self.last_node = ret_node

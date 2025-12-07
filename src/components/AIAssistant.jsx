@@ -58,6 +58,10 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
     const [notionKey, setNotionKey] = useState(localStorage.getItem('notionKey') || '');
     const [showNotionModal, setShowNotionModal] = useState(false);
 
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [fileName, setFileName] = useState('');
+    const fileInputRef = useRef(null);
+
     const messagesEndRef = useRef(null);
     const isDark = theme === 'dark';
 
@@ -102,8 +106,20 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
         }
     };
 
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setSelectedFile(reader.result); // This is the base64 data URL
+                setFileName(file.name);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleSend = async () => {
-        if (!input.trim() && !activeModel) return;
+        if (!input.trim() && !activeModel && !selectedFile) return;
 
         let modelName = activeModel ? activeModel : 'llama';
         let messageContent = input;
@@ -146,10 +162,19 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
 
         const content = activeModel ? `[Using ${activeModel}] ${input}` : displayContent;
 
-        const userMessage = { role: 'user', content: content };
+        // Add file info to display content if present
+        const displayMsg = selectedFile ? `[File: ${fileName}] ${content}` : content;
+
+        const userMessage = { role: 'user', content: displayMsg };
 
         setMessages(prev => [...prev, userMessage]);
         setInput('');
+
+        // Store file data to send and clear state
+        const imageToSend = selectedFile;
+        const fileNameToSend = fileName;
+        setSelectedFile(null);
+        setFileName('');
 
         try {
             const response = await fetch('/api/chat', {
@@ -161,7 +186,9 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
                     message: messageContent || input, // Use processed message or original
                     model: modelName,
                     apiKey: modelName === 'notion' ? notionKey : undefined,
-                    currentCode: code
+                    currentCode: code,
+                    image: imageToSend,
+                    fileName: fileNameToSend
                 }),
             });
 
@@ -317,8 +344,28 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
 
                 {/* Input */}
                 <div className={`p-4 border-t ${isDark ? 'border-slate-800 bg-slate-900' : 'border-gray-200 bg-white'}`}>
-                    <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${isDark ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'
+                    <div className={`flex items-center gap-2 rounded-xl px-3 py-2 ${isDark ? 'bg-slate-800' : 'bg-gray-50'
                         }`}>
+
+                        {/* Hidden File Input */}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            accept="image/*,.txt,.py,.js,.java,.md"
+                        />
+
+                        {/* File Upload Button */}
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className={`p-1.5 rounded-lg transition-colors ${isDark ? 'text-gray-400 hover:text-white hover:bg-slate-700' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}
+                            title="Upload image or file"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                            </svg>
+                        </button>
 
                         {/* Active Model Node Chip */}
                         {activeModel && (
@@ -344,6 +391,23 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
                             </div>
                         )}
 
+                        {/* Selected File Chip */}
+                        {selectedFile && (
+                            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md text-sm font-medium select-none animate-in fade-in slide-in-from-left-2 ${isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span className="max-w-[100px] truncate">{fileName}</span>
+                                <button
+                                    onClick={() => { setSelectedFile(null); setFileName(''); }}
+                                    className="ml-1 hover:text-red-500"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        )}
+
                         <input
                             type="text"
                             value={input}
@@ -355,8 +419,8 @@ export default function AIAssistant({ isOpen, onClose, theme, code }) {
                         />
                         <button
                             onClick={handleSend}
-                            disabled={!input.trim() && !activeModel}
-                            className={`p-1.5 rounded-lg transition-colors ${input.trim() || activeModel
+                            disabled={!input.trim() && !activeModel && !selectedFile}
+                            className={`p-1.5 rounded-lg transition-colors ${input.trim() || activeModel || selectedFile
                                 ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                                 : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-50'
                                 }`}
